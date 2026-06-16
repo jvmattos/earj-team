@@ -18,6 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { toast } from "sonner";
 import AddPageDialog from "@/components/AddPageDialog";
 import DailyAgendaAlert from "@/components/DailyAgendaAlert";
+import { useSetting, useSaveSetting } from "@/hooks/useSettings";
 
 const CAMPUS_LABELS: Record<string, string> = { barra: "Barra", gavea: "Gávea" };
 
@@ -35,6 +36,26 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [addPageOpen, setAddPageOpen] = useState(false);
   const [editingPage, setEditingPage] = useState<any>(null);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameTarget, setRenameTarget] = useState<{ key: string; current: string } | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+
+  const { value: requestsLabel } = useSetting("nav_requests_label", "Lista de Pedidos");
+  const { value: tasksLabel } = useSetting("nav_tasks_label", "Lista de Tarefas");
+  const saveSetting = useSaveSetting();
+
+  const openRename = (key: string, current: string) => {
+    setRenameTarget({ key, current });
+    setRenameValue(current);
+    setRenameOpen(true);
+  };
+
+  const handleRename = async () => {
+    if (!renameTarget || !renameValue.trim()) return;
+    await saveSetting.mutateAsync({ key: renameTarget.key, value: renameValue.trim() });
+    toast.success("Nome atualizado!");
+    setRenameOpen(false);
+  };
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -108,20 +129,42 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
       {/* Equipe */}
       {sectionLabel("Equipe")}
-      <Link
-        to="/team/requests"
-        onClick={() => closeMobile && setSidebarOpen(false)}
-        className={navLinkClass(isActive("/team/requests"))}
-      >
-        <ClipboardList className="h-4 w-4 shrink-0" /> Lista de Pedidos
-      </Link>
-      <Link
-        to="/team/tasks"
-        onClick={() => closeMobile && setSidebarOpen(false)}
-        className={navLinkClass(isActive("/team/tasks"))}
-      >
-        <CheckSquare className="h-4 w-4 shrink-0" /> Lista de Tarefas
-      </Link>
+      <div className="flex items-center gap-0.5">
+        <Link
+          to="/team/requests"
+          onClick={() => closeMobile && setSidebarOpen(false)}
+          className={navLinkClass(isActive("/team/requests")) + " flex-1 min-w-0"}
+        >
+          <ClipboardList className="h-4 w-4 shrink-0" /> <span className="truncate">{requestsLabel as string}</span>
+        </Link>
+        {isAdmin && (
+          <button
+            onClick={() => openRename("nav_requests_label", requestsLabel as string)}
+            title="Renomear"
+            className="p-1.5 rounded-lg text-white/30 hover:text-white hover:bg-white/10 transition-all shrink-0"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+      <div className="flex items-center gap-0.5">
+        <Link
+          to="/team/tasks"
+          onClick={() => closeMobile && setSidebarOpen(false)}
+          className={navLinkClass(isActive("/team/tasks")) + " flex-1 min-w-0"}
+        >
+          <CheckSquare className="h-4 w-4 shrink-0" /> <span className="truncate">{tasksLabel as string}</span>
+        </Link>
+        {isAdmin && (
+          <button
+            onClick={() => openRename("nav_tasks_label", tasksLabel as string)}
+            title="Renomear"
+            className="p-1.5 rounded-lg text-white/30 hover:text-white hover:bg-white/10 transition-all shrink-0"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
 
       {/* Páginas dinâmicas */}
       {(teamPages as any[]).map((page: any) => {
@@ -310,6 +353,28 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
       <AddPageDialog open={addPageOpen} onClose={() => setAddPageOpen(false)} onCreated={() => refetchPages()} />
       <AddPageDialog open={!!editingPage} onClose={() => setEditingPage(null)} onCreated={() => refetchPages()} page={editingPage} />
+
+      <Dialog open={renameOpen} onOpenChange={(o) => { setRenameOpen(o); }}>
+        <DialogContent className="sm:max-w-xs">
+          <DialogHeader><DialogTitle>Renomear item do menu</DialogTitle></DialogHeader>
+          <div className="py-2">
+            <Label className="text-xs">Nome</Label>
+            <Input
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              className="mt-1 h-9 text-sm"
+              onKeyDown={(e) => e.key === "Enter" && handleRename()}
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenameOpen(false)}>Cancelar</Button>
+            <Button onClick={handleRename} disabled={!renameValue.trim() || saveSetting.isPending}>
+              {saveSetting.isPending ? "Salvando..." : "Salvar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <DailyAgendaAlert />
 
       <Dialog open={passwordOpen} onOpenChange={(o) => { setPasswordOpen(o); if (!o) { setNewPassword(""); setConfirmPassword(""); setPasswordError(""); } }}>
