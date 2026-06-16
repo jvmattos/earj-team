@@ -9,11 +9,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Pencil, Trash2, ExternalLink } from "lucide-react";
+import { Pencil, Trash2, Plus } from "lucide-react";
 
 export default function UserManagement() {
   const { isAdmin, user: currentUser } = useAuth();
   const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ email: "", full_name: "", role: "operator", password: "", campus: "barra" });
   const [editOpen, setEditOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<any>(null);
   const [editForm, setEditForm] = useState({ full_name: "" });
@@ -25,6 +27,23 @@ export default function UserManagement() {
       if (error) throw error;
       return data;
     },
+  });
+
+  const createUser = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke("create-user", {
+        body: { email: form.email, password: form.password, full_name: form.full_name, role: form.role, campus: form.campus },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["profiles"] });
+      toast.success("Usuário criado!");
+      setOpen(false);
+      setForm({ email: "", full_name: "", role: "operator", password: "", campus: "barra" });
+    },
+    onError: (e: any) => toast.error(e.message),
   });
 
   const updateRole = useMutation({
@@ -97,14 +116,9 @@ export default function UserManagement() {
           <h1 className="text-2xl font-bold">Usuários</h1>
           <p className="text-sm text-muted-foreground">Gerencie quem tem acesso ao sistema</p>
         </div>
-        <a
-          href="https://supabase.com/dashboard/project/_/auth/users"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
-        >
-          <ExternalLink className="h-4 w-4" /> Criar no Supabase
-        </a>
+        <Button onClick={() => setOpen(true)} className="gap-2">
+          <Plus className="h-4 w-4" /> Novo usuário
+        </Button>
       </div>
 
       <div className="border rounded-lg overflow-hidden">
@@ -185,15 +199,54 @@ export default function UserManagement() {
         </Table>
       </div>
 
-      <div className="rounded-lg border bg-amber-50 border-amber-200 p-4 text-sm text-amber-800 space-y-1">
-        <p><strong>Como criar um novo usuário:</strong></p>
-        <ol className="list-decimal list-inside space-y-0.5 text-amber-700">
-          <li>Acesse o painel do Supabase → <strong>Authentication → Users → Add user</strong></li>
-          <li>Preencha email e senha provisória e clique em <strong>Create user</strong></li>
-          <li>O perfil aparecerá aqui automaticamente — edite a função e o campus</li>
-          <li>Passe a senha provisória ao usuário; ele pode trocá-la no app pelo ícone de chave</li>
-        </ol>
-      </div>
+
+      <Dialog open={open} onOpenChange={(o) => !o && setOpen(false)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader><DialogTitle>Novo usuário</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <Label className="text-xs">Nome completo</Label>
+              <Input value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} className="mt-1 h-9 text-sm" />
+            </div>
+            <div>
+              <Label className="text-xs">Email *</Label>
+              <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="mt-1 h-9 text-sm" />
+            </div>
+            <div>
+              <Label className="text-xs">Senha provisória *</Label>
+              <Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="mt-1 h-9 text-sm" />
+            </div>
+            <div>
+              <Label className="text-xs">Função</Label>
+              <Select value={form.role} onValueChange={(v) => setForm({ ...form, role: v })}>
+                <SelectTrigger className="mt-1 h-9 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="admin">Admin</SelectItem>
+                  <SelectItem value="operator">Operator</SelectItem>
+                  <SelectItem value="viewer">Viewer</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Campus</Label>
+              <Select value={form.campus} onValueChange={(v) => setForm({ ...form, campus: v })}>
+                <SelectTrigger className="mt-1 h-9 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="barra">Barra</SelectItem>
+                  <SelectItem value="gavea">Gávea</SelectItem>
+                  <SelectItem value="all">Ambos</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
+            <Button onClick={() => createUser.mutate()} disabled={!form.email || !form.password || createUser.isPending}>
+              {createUser.isPending ? "Criando..." : "Criar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={editOpen} onOpenChange={(o) => !o && setEditOpen(false)}>
         <DialogContent className="sm:max-w-sm">
