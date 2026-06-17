@@ -4,6 +4,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { Download, DatabaseBackup } from "lucide-react";
+import { exportDatabaseBackup, downloadJson, downloadCsv } from "@/lib/backup";
+import { toast } from "sonner";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -21,6 +25,7 @@ const ACTION_LABELS: Record<string, { label: string; className: string }> = {
 export default function AuditLog() {
   const { isAdmin } = useAuth();
   const [tableFilter, setTableFilter] = useState<string>("all");
+  const [backingUp, setBackingUp] = useState(false);
 
   const { data: entries = [], isLoading } = useQuery({
     queryKey: ["audit_log"],
@@ -44,22 +49,55 @@ export default function AuditLog() {
 
   const filtered = tableFilter === "all" ? entries : entries.filter((e: any) => e.table_name === tableFilter);
 
+  const exportLog = () => {
+    if (!filtered.length) return toast.error("Nada para exportar");
+    downloadCsv(`log-alteracoes-${new Date().toISOString().slice(0, 10)}.csv`, filtered.map((e: any) => ({
+      data: e.created_at, usuario: e.user_name, area: TABLE_LABELS[e.table_name] || e.table_name,
+      acao: ACTION_LABELS[e.action]?.label || e.action, descricao: e.description,
+    })));
+    toast.success("Log exportado!");
+  };
+
+  const backupDatabase = async () => {
+    setBackingUp(true);
+    try {
+      const backup = await exportDatabaseBackup();
+      downloadJson(`backup-earj-team-${new Date().toISOString().slice(0, 10)}.json`, backup);
+      toast.success("Backup gerado!");
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setBackingUp(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-2xl font-bold">Log de alterações</h1>
           <p className="text-sm text-muted-foreground">Quem criou, editou ou excluiu o quê</p>
         </div>
-        <Select value={tableFilter} onValueChange={setTableFilter}>
-          <SelectTrigger className="w-40 h-9 text-sm"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Tudo</SelectItem>
-            <SelectItem value="team_requests">Pedidos</SelectItem>
-            <SelectItem value="team_tasks">Tarefas</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={exportLog}>
+            <Download className="h-3.5 w-3.5" /> Exportar log (CSV)
+          </Button>
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={backupDatabase} disabled={backingUp}>
+            <DatabaseBackup className="h-3.5 w-3.5" /> {backingUp ? "Gerando..." : "Backup do banco"}
+          </Button>
+          <Select value={tableFilter} onValueChange={setTableFilter}>
+            <SelectTrigger className="w-40 h-9 text-sm"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tudo</SelectItem>
+              <SelectItem value="team_requests">Pedidos</SelectItem>
+              <SelectItem value="team_tasks">Tarefas</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
+      <p className="text-xs text-muted-foreground">
+        O backup gera um arquivo JSON com todos os dados atuais (pedidos, tarefas, páginas, usuários, colunas, etc.) para guardar localmente. O Supabase também mantém backups automáticos do banco (verifique o plano do projeto em Settings → Backups no painel).
+      </p>
 
       <div className="border rounded-lg overflow-hidden">
         <Table>
