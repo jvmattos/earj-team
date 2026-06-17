@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Pencil, Trash2, Plus } from "lucide-react";
+import { Pencil, Trash2, Plus, KeyRound } from "lucide-react";
 
 export default function UserManagement() {
   const { isAdmin, user: currentUser } = useAuth();
@@ -115,6 +115,17 @@ export default function UserManagement() {
     onError: (e: any) => toast.error(e.message),
   });
 
+  const sendPasswordReset = useMutation({
+    mutationFn: async (email: string) => {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/redefinir-senha`,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => toast.success("Link de redefinição enviado por email!"),
+    onError: (e: any) => toast.error(e.message),
+  });
+
   const openEdit = (u: any) => {
     setEditingUser(u);
     setEditForm({ full_name: u.full_name || "" });
@@ -147,7 +158,7 @@ export default function UserManagement() {
               <TableHead>Email</TableHead>
               <TableHead>Função</TableHead>
               <TableHead>Campus</TableHead>
-              <TableHead className="w-20">Ações</TableHead>
+              <TableHead className="w-28">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -198,8 +209,16 @@ export default function UserManagement() {
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-1">
-                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(u)}>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(u)} title="Editar perfil">
                       <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost" size="icon" className="h-7 w-7"
+                      title="Enviar link de redefinição de senha"
+                      disabled={sendPasswordReset.isPending}
+                      onClick={() => { if (confirm(`Enviar email de redefinição de senha para "${u.email}"?`)) sendPasswordReset.mutate(u.email); }}
+                    >
+                      <KeyRound className="h-3.5 w-3.5" />
                     </Button>
                     <Button
                       variant="ghost" size="icon" className="h-7 w-7 text-destructive"
