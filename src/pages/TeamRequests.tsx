@@ -17,7 +17,26 @@ import { toast } from "sonner";
 import { Plus, Trash2, Search, X, GripVertical } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import TeamColumnsManager, { CustomColumnCell, useCustomColumns, useColumnValues, ColumnHeader, QuickAddColumn, BuiltInColumnHeader } from "@/components/TeamColumnsManager";
+import TeamColumnsManager, { CustomColumnCell, useCustomColumns, useColumnValues, useColumnPrefs, ColumnHeader, QuickAddColumn, BuiltInColumnHeader } from "@/components/TeamColumnsManager";
+import { logAudit, formatLogValue } from "@/lib/auditLog";
+
+const REQUEST_FIELD_LABELS: Record<string, string> = {
+  name: "Nome da solicitação",
+  product_area: "Área de produto",
+  description: "Descrição",
+  priority: "Prioridade",
+  status: "Status",
+};
+
+const REQUEST_BUILTIN_FIELDS = [
+  { field: "name", label: "Nome da solicitação" },
+  { field: "product_area", label: "Área de produto" },
+  { field: "description", label: "Descrição" },
+  { field: "priority", label: "Prioridade" },
+  { field: "created_at", label: "Data solicitada" },
+  { field: "requested_by_name", label: "Solicitado por" },
+  { field: "status", label: "Status" },
+];
 
 
 const priorityColor: Record<string, string> = {
@@ -271,12 +290,22 @@ export default function TeamRequests() {
   const { data: customCols = [] } = useCustomColumns("requests");
   const rowIds = requests.map((r: any) => r.id);
   const { data: colValues = {} } = useColumnValues(rowIds);
+  const { prefs } = useColumnPrefs("requests");
+  const visibleBuiltIn = REQUEST_BUILTIN_FIELDS.filter((f) => !prefs[f.field]?.hidden).map((f) => f.field);
+  const isVisible = (field: string) => visibleBuiltIn.includes(field);
+  const totalCols = visibleBuiltIn.length + customCols.length + 1 + (canEdit ? 1 : 0);
+
+  const log = (action: "create" | "update" | "delete", description: string, record_id?: string) =>
+    logAudit({ table_name: "team_requests", record_id, action, description, user_id: user?.id, user_name: profile?.full_name || profile?.email || "" });
 
   const upsertColValue = useMutation({
     mutationFn: async ({ rowId, columnId, value }: { rowId: string; columnId: string; value: any }) => {
       const { error } = await supabase.from("team_column_values")
         .upsert({ row_id: rowId, column_id: columnId, value }, { onConflict: "column_id,row_id" });
       if (error) throw error;
+      const row = requests.find((r: any) => r.id === rowId);
+      const col = customCols.find((c) => c.id === columnId);
+      log("update", `Editou "${col?.name || "coluna"}" para "${formatLogValue(value)}" em "${row?.name || rowId}"`, rowId);
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["team_column_values"] }),
     onError: (e: any) => toast.error(e.message),
@@ -284,8 +313,10 @@ export default function TeamRequests() {
 
   const updateField = useMutation({
     mutationFn: async ({ id, field, value }: { id: string; field: string; value: any }) => {
+      const row = requests.find((r: any) => r.id === id);
       const { error } = await supabase.from("team_requests").update({ [field]: value } as any).eq("id", id);
       if (error) throw error;
+      log("update", `Editou "${REQUEST_FIELD_LABELS[field] || field}" para "${formatLogValue(value)}" em "${row?.name || id}"`, id);
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["team_requests", campus] }),
     onError: (e: any) => toast.error(e.message),
@@ -301,6 +332,7 @@ export default function TeamRequests() {
         campus,
       });
       if (error) throw error;
+      log("create", `Criou o pedido "Nova solicitação"`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["team_requests", campus] });
@@ -311,8 +343,10 @@ export default function TeamRequests() {
 
   const deleteRow = useMutation({
     mutationFn: async (id: string) => {
+      const row = requests.find((r: any) => r.id === id);
       const { error } = await supabase.from("team_requests").delete().eq("id", id);
       if (error) throw error;
+      log("delete", `Excluiu o pedido "${row?.name || id}"`, id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["team_requests", campus] });
@@ -337,7 +371,7 @@ export default function TeamRequests() {
           <Input placeholder="Buscar pedidos..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
         </div>
         <div className="flex gap-2">
-          {canEdit && <TeamColumnsManager table="requests" />}
+          {canEdit && <TeamColumnsManager table="requests" builtInFields={REQUEST_BUILTIN_FIELDS} />}
           <Button onClick={() => addRow.mutate()} className="gap-2" size="sm">
             <Plus className="h-4 w-4" /> Nova Linha
           </Button>
@@ -348,13 +382,13 @@ export default function TeamRequests() {
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50">
-              <TableHead className="min-w-[250px]"><BuiltInColumnHeader field="name" defaultLabel="Nome da solicitação" type="Texto" table="requests" /></TableHead>
-              <TableHead className="min-w-[150px]"><BuiltInColumnHeader field="product_area" defaultLabel="Área de produto" type="Multi-seleção" table="requests" /></TableHead>
-              <TableHead className="min-w-[150px]"><BuiltInColumnHeader field="description" defaultLabel="Descrição" type="Texto" table="requests" /></TableHead>
-              <TableHead className="min-w-[100px]"><BuiltInColumnHeader field="priority" defaultLabel="Prioridade" type="Seleção" table="requests" /></TableHead>
-              <TableHead className="min-w-[160px]"><BuiltInColumnHeader field="created_at" defaultLabel="Data solicitada" type="Data" table="requests" /></TableHead>
-              <TableHead className="min-w-[140px]"><BuiltInColumnHeader field="requested_by_name" defaultLabel="Solicitado por" type="Texto" table="requests" /></TableHead>
-              <TableHead className="min-w-[120px]"><BuiltInColumnHeader field="status" defaultLabel="Status" type="Seleção" table="requests" /></TableHead>
+              {isVisible("name") && <TableHead className="min-w-[250px]"><BuiltInColumnHeader field="name" defaultLabel="Nome da solicitação" type="Texto" table="requests" /></TableHead>}
+              {isVisible("product_area") && <TableHead className="min-w-[150px]"><BuiltInColumnHeader field="product_area" defaultLabel="Área de produto" type="Multi-seleção" table="requests" /></TableHead>}
+              {isVisible("description") && <TableHead className="min-w-[150px]"><BuiltInColumnHeader field="description" defaultLabel="Descrição" type="Texto" table="requests" /></TableHead>}
+              {isVisible("priority") && <TableHead className="min-w-[100px]"><BuiltInColumnHeader field="priority" defaultLabel="Prioridade" type="Seleção" table="requests" /></TableHead>}
+              {isVisible("created_at") && <TableHead className="min-w-[160px]"><BuiltInColumnHeader field="created_at" defaultLabel="Data solicitada" type="Data" table="requests" /></TableHead>}
+              {isVisible("requested_by_name") && <TableHead className="min-w-[140px]"><BuiltInColumnHeader field="requested_by_name" defaultLabel="Solicitado por" type="Texto" table="requests" /></TableHead>}
+              {isVisible("status") && <TableHead className="min-w-[120px]"><BuiltInColumnHeader field="status" defaultLabel="Status" type="Seleção" table="requests" /></TableHead>}
               {customCols.map((c) => (
                 <TableHead key={c.id} className="min-w-[140px]">
                   <ColumnHeader column={c} table="requests" />
@@ -369,59 +403,71 @@ export default function TeamRequests() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Carregando...</TableCell>
+                <TableCell colSpan={totalCols} className="text-center py-8 text-muted-foreground">Carregando...</TableCell>
               </TableRow>
             ) : filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Nenhum pedido encontrado</TableCell>
+                <TableCell colSpan={totalCols} className="text-center py-8 text-muted-foreground">Nenhum pedido encontrado</TableCell>
               </TableRow>
             ) : (
               filtered.map((r) => (
                 <TableRow key={r.id} className="group">
-                  <TableCell className="p-1">
-                    <EditableCell
-                      value={r.name}
-                      onSave={(v) => updateField.mutate({ id: r.id, field: "name", value: v })}
-                      className="font-medium"
-                    />
-                  </TableCell>
-                  <TableCell className="p-1">
-                    <InlineMultiSelect
-                      values={(r.product_area as string[]) || []}
-                      options={allAreas}
-                      onSave={(v) => updateField.mutate({ id: r.id, field: "product_area", value: v })}
-                      onCreate={undefined}
-                      colorMap={areaColors}
-                    />
-                  </TableCell>
-                  <TableCell className="p-1">
-                    <EditableCell
-                      value={r.description || ""}
-                      onSave={(v) => updateField.mutate({ id: r.id, field: "description", value: v })}
-                    />
-                  </TableCell>
-                  <TableCell className="p-1">
-                    <InlineSelect
-                      value={r.priority || ""}
-                      options={allPriorities}
-                      onSelect={(v) => updateField.mutate({ id: r.id, field: "priority", value: v || null })}
-                      onCreate={undefined}
-                      colorMap={priorityColor}
-                    />
-                  </TableCell>
-                  <TableCell className="p-1 text-sm text-muted-foreground whitespace-nowrap px-2">
-                    {r.created_at && format(new Date(r.created_at), "dd 'de' MMMM 'de' yyyy HH:mm", { locale: ptBR })}
-                  </TableCell>
-                  <TableCell className="p-1 text-sm px-2">{r.requested_by_name}</TableCell>
-                  <TableCell className="p-1">
-                    <InlineSelect
-                      value={r.status}
-                      options={allStatuses}
-                      onSelect={(v) => v && updateField.mutate({ id: r.id, field: "status", value: v })}
-                      onCreate={undefined}
-                      colorMap={statusColor}
-                    />
-                  </TableCell>
+                  {isVisible("name") && (
+                    <TableCell className="p-1">
+                      <EditableCell
+                        value={r.name}
+                        onSave={(v) => updateField.mutate({ id: r.id, field: "name", value: v })}
+                        className="font-medium"
+                      />
+                    </TableCell>
+                  )}
+                  {isVisible("product_area") && (
+                    <TableCell className="p-1">
+                      <InlineMultiSelect
+                        values={(r.product_area as string[]) || []}
+                        options={allAreas}
+                        onSave={(v) => updateField.mutate({ id: r.id, field: "product_area", value: v })}
+                        onCreate={undefined}
+                        colorMap={areaColors}
+                      />
+                    </TableCell>
+                  )}
+                  {isVisible("description") && (
+                    <TableCell className="p-1">
+                      <EditableCell
+                        value={r.description || ""}
+                        onSave={(v) => updateField.mutate({ id: r.id, field: "description", value: v })}
+                      />
+                    </TableCell>
+                  )}
+                  {isVisible("priority") && (
+                    <TableCell className="p-1">
+                      <InlineSelect
+                        value={r.priority || ""}
+                        options={allPriorities}
+                        onSelect={(v) => updateField.mutate({ id: r.id, field: "priority", value: v || null })}
+                        onCreate={undefined}
+                        colorMap={priorityColor}
+                      />
+                    </TableCell>
+                  )}
+                  {isVisible("created_at") && (
+                    <TableCell className="p-1 text-sm text-muted-foreground whitespace-nowrap px-2">
+                      {r.created_at && format(new Date(r.created_at), "dd 'de' MMMM 'de' yyyy HH:mm", { locale: ptBR })}
+                    </TableCell>
+                  )}
+                  {isVisible("requested_by_name") && <TableCell className="p-1 text-sm px-2">{r.requested_by_name}</TableCell>}
+                  {isVisible("status") && (
+                    <TableCell className="p-1">
+                      <InlineSelect
+                        value={r.status}
+                        options={allStatuses}
+                        onSelect={(v) => v && updateField.mutate({ id: r.id, field: "status", value: v })}
+                        onCreate={undefined}
+                        colorMap={statusColor}
+                      />
+                    </TableCell>
+                  )}
                   {customCols.map((c) => (
                     <TableCell key={c.id} className="p-1">
                       <CustomColumnCell

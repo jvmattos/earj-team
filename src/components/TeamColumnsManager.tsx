@@ -1,13 +1,38 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { useSetting, useSaveSetting } from "@/hooks/useSettings";
+import { logAudit } from "@/lib/auditLog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
-import { Plus, Trash2, Settings2, X, ChevronDown } from "lucide-react";
+import { Plus, Trash2, Settings2, X, ChevronDown, Eye } from "lucide-react";
+
+const TABLE_LOG_NAME: Record<string, string> = { tasks: "team_tasks", requests: "team_requests" };
+
+function useLogger() {
+  const { user, profile } = useAuth();
+  return (table_name: string, action: "create" | "update" | "delete", description: string, record_id?: string) =>
+    logAudit({ table_name, record_id, action, description, user_id: user?.id, user_name: profile?.full_name || profile?.email || "" });
+}
+
+// ── Show/hide & rename built-in (fixed) columns, shared across the team ──
+export type ColumnPrefs = Record<string, { label?: string; hidden?: boolean }>;
+
+export function useColumnPrefs(table: string) {
+  const key = `builtin_cols_${table}`;
+  const { value } = useSetting<ColumnPrefs>(key, {});
+  const save = useSaveSetting();
+  const prefs = (value || {}) as ColumnPrefs;
+  const setPref = (field: string, patch: Partial<ColumnPrefs[string]>) => {
+    save.mutate({ key, value: { ...prefs, [field]: { ...prefs[field], ...patch } } });
+  };
+  return { prefs, setPref };
+}
 
 export const COLORS = [
   { value: "bg-blue-500",   label: "Azul" },
@@ -71,6 +96,7 @@ export function QuickAddColumn({ table, existingCols }: { table: "tasks" | "requ
   const [name, setName] = useState("");
   const [type, setType] = useState<ColType>("text");
   const qc = useQueryClient();
+  const log = useLogger();
 
   const create = async () => {
     if (!name.trim()) return;
@@ -80,6 +106,7 @@ export function QuickAddColumn({ table, existingCols }: { table: "tasks" | "requ
     } as any);
     if (error) { toast.error(error.message); return; }
     qc.invalidateQueries({ queryKey: ["team_columns", table] });
+    log(TABLE_LOG_NAME[table], "create", `Criou a coluna "${name.trim()}"`);
     setName(""); setType("text"); setOpen(false);
     toast.success("Coluna criada!");
   };
@@ -118,6 +145,7 @@ export function QuickAddColumn({ table, existingCols }: { table: "tasks" | "requ
 // ── Column header with inline Notion-like editing ───────────
 export function ColumnHeader({ column, table }: { column: CustomColumn; table: "tasks" | "requests" }) {
   const qc = useQueryClient();
+  const log = useLogger();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(column.name);
   const [optLabel, setOptLabel] = useState("");
@@ -137,12 +165,19 @@ export function ColumnHeader({ column, table }: { column: CustomColumn; table: "
       const { error } = await supabase.from("team_columns").delete().eq("id", column.id);
       if (error) throw error;
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["team_columns", table] }); setOpen(false); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["team_columns", table] });
+      log(TABLE_LOG_NAME[table], "delete", `Excluiu a coluna "${column.name}"`, column.id);
+      setOpen(false);
+    },
     onError: (e: any) => toast.error(e.message),
   });
 
   const saveName = () => {
-    if (name.trim() && name.trim() !== column.name) update.mutate({ name: name.trim() });
+    if (name.trim() && name.trim() !== column.name) {
+      update.mutate({ name: name.trim() });
+      log(TABLE_LOG_NAME[table], "update", `Renomeou a coluna "${column.name}" para "${name.trim()}"`, column.id);
+    }
   };
 
   const addOption = () => {
@@ -240,30 +275,29 @@ export function ColumnHeader({ column, table }: { column: CustomColumn; table: "
   );
 }
 
-// ── Built-in column header (rename via localStorage) ─────────
+// ── Built-in column header: rename + hide, shared across the team ───
 export function BuiltInColumnHeader({ field, defaultLabel, type, table }: {
   field: string; defaultLabel: string; type: string; table: string;
 }) {
-  const storageKey = `stokit_col_labels_${table}`;
-
-  const getLabel = () => {
-    try { const s = localStorage.getItem(storageKey); if (s) return JSON.parse(s)[field] || defaultLabel; } catch {}
-    return defaultLabel;
-  };
+  const { prefs, setPref } = useColumnPrefs(table);
+  const log = useLogger();
+  const label = prefs[field]?.label || defaultLabel;
 
   const [open, setOpen] = useState(false);
-  const [label, setLabel] = useState(getLabel);
   const [val, setVal] = useState(label);
 
   const save = () => {
     const trimmed = val.trim() || defaultLabel;
-    setLabel(trimmed);
-    try {
-      const s = localStorage.getItem(storageKey);
-      const labels = s ? JSON.parse(s) : {};
-      if (trimmed === defaultLabel) delete labels[field]; else labels[field] = trimmed;
-      localStorage.setItem(storageKey, JSON.stringify(labels));
-    } catch {}
+    if (trimmed !== label) {
+      setPref(field, { label: trimmed === defaultLabel ? undefined : trimmed });
+      log(TABLE_LOG_NAME[table], "update", `Renomeou a coluna "${label}" para "${trimmed}"`);
+    }
+    setOpen(false);
+  };
+
+  const hide = () => {
+    setPref(field, { hidden: true });
+    log(TABLE_LOG_NAME[table], "delete", `Ocultou a coluna "${label}"`);
     setOpen(false);
   };
 
@@ -288,18 +322,30 @@ export function BuiltInColumnHeader({ field, defaultLabel, type, table }: {
         {label !== defaultLabel && (
           <button onClick={() => { setVal(defaultLabel); setTimeout(save, 0); }}
             className="text-[11px] text-muted-foreground hover:text-foreground">
-            Restaurar padrão
+            Restaurar nome padrão
           </button>
         )}
         <Button size="sm" className="w-full h-7 text-xs" onClick={save}>Salvar</Button>
+        <div className="pt-2 border-t">
+          <button
+            onClick={() => { if (confirm(`Ocultar a coluna "${label}"? Os dados continuam salvos e podem ser restaurados em "Colunas".`)) hide(); }}
+            className="flex items-center gap-1.5 text-xs text-destructive hover:text-destructive/80 w-full py-0.5"
+          >
+            <Trash2 className="h-3 w-3" /> Ocultar coluna
+          </button>
+        </div>
       </PopoverContent>
     </Popover>
   );
 }
 
 // ── Settings dialog (existing) ───────────────────────────────
-export default function TeamColumnsManager({ table }: { table: "tasks" | "requests" }) {
+export default function TeamColumnsManager({ table, builtInFields = [] }: {
+  table: "tasks" | "requests";
+  builtInFields?: { field: string; label: string }[];
+}) {
   const qc = useQueryClient();
+  const log = useLogger();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [type, setType] = useState<ColType>("text");
@@ -308,6 +354,8 @@ export default function TeamColumnsManager({ table }: { table: "tasks" | "reques
   const [optColor, setOptColor] = useState(COLORS[0].value);
 
   const { data: cols = [] } = useCustomColumns(table);
+  const { prefs, setPref } = useColumnPrefs(table);
+  const hiddenFields = builtInFields.filter((f) => prefs[f.field]?.hidden);
 
   const create = useMutation({
     mutationFn: async () => {
@@ -319,11 +367,17 @@ export default function TeamColumnsManager({ table }: { table: "tasks" | "reques
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["team_columns", table] });
+      log(TABLE_LOG_NAME[table], "create", `Criou a coluna "${name}"`);
       toast.success("Coluna criada");
       setOpen(false); setName(""); setType("text"); setOptions([]);
     },
     onError: (e: any) => toast.error(e.message),
   });
+
+  const unhide = (field: string, label: string) => {
+    setPref(field, { hidden: false });
+    log(TABLE_LOG_NAME[table], "update", `Mostrou novamente a coluna "${label}"`);
+  };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -337,6 +391,19 @@ export default function TeamColumnsManager({ table }: { table: "tasks" | "reques
           <DialogTitle>Colunas customizadas</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
+          {hiddenFields.length > 0 && (
+            <div className="border rounded-lg p-3 space-y-2 bg-muted/30">
+              <div className="text-xs font-semibold">Colunas ocultas</div>
+              {hiddenFields.map((f) => (
+                <div key={f.field} className="flex items-center justify-between">
+                  <span className="text-sm">{prefs[f.field]?.label || f.label}</span>
+                  <Button size="sm" variant="outline" className="h-7 gap-1.5" onClick={() => unhide(f.field, prefs[f.field]?.label || f.label)}>
+                    <Eye className="h-3.5 w-3.5" /> Mostrar
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
           {cols.length > 0 && (
             <div className="border rounded-lg divide-y">
               {cols.map((c) => (

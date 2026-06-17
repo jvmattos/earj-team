@@ -15,7 +15,25 @@ import {
 } from "@/components/ui/popover";
 import { toast } from "sonner";
 import { Plus, Trash2, Search, X } from "lucide-react";
-import TeamColumnsManager, { CustomColumnCell, useCustomColumns, useColumnValues, ColumnHeader, QuickAddColumn, BuiltInColumnHeader } from "@/components/TeamColumnsManager";
+import TeamColumnsManager, { CustomColumnCell, useCustomColumns, useColumnValues, useColumnPrefs, ColumnHeader, QuickAddColumn, BuiltInColumnHeader } from "@/components/TeamColumnsManager";
+import { logAudit, formatLogValue } from "@/lib/auditLog";
+
+const TASK_FIELD_LABELS: Record<string, string> = {
+  title: "Tarefa",
+  description: "Descrição",
+  priority: "Prioridade",
+  due_date: "Prazo",
+  status: "Status",
+};
+
+const TASK_BUILTIN_FIELDS = [
+  { field: "title", label: "Tarefa" },
+  { field: "description", label: "Descrição" },
+  { field: "priority", label: "Prioridade" },
+  { field: "assignees", label: "Responsáveis" },
+  { field: "due_date", label: "Prazo" },
+  { field: "status", label: "Status" },
+];
 
 
 
@@ -255,12 +273,22 @@ export default function TeamTasks() {
   const { data: customCols = [] } = useCustomColumns("tasks");
   const taskIds = tasks.map((t: any) => t.id);
   const { data: colValues = {} } = useColumnValues(taskIds);
+  const { prefs } = useColumnPrefs("tasks");
+  const visibleBuiltIn = TASK_BUILTIN_FIELDS.filter((f) => !prefs[f.field]?.hidden).map((f) => f.field);
+  const isVisible = (field: string) => visibleBuiltIn.includes(field);
+  const totalCols = 1 + visibleBuiltIn.length + customCols.length + 2 + (canEdit ? 1 : 0);
+
+  const log = (action: "create" | "update" | "delete", description: string, record_id?: string) =>
+    logAudit({ table_name: "team_tasks", record_id, action, description, user_id: user?.id, user_name: profile?.full_name || profile?.email || "" });
 
   const upsertColValue = useMutation({
     mutationFn: async ({ rowId, columnId, value }: { rowId: string; columnId: string; value: any }) => {
       const { error } = await supabase.from("team_column_values")
         .upsert({ row_id: rowId, column_id: columnId, value }, { onConflict: "column_id,row_id" });
       if (error) throw error;
+      const row = tasks.find((t: any) => t.id === rowId);
+      const col = customCols.find((c) => c.id === columnId);
+      log("update", `Editou "${col?.name || "coluna"}" para "${formatLogValue(value)}" em "${row?.title || rowId}"`, rowId);
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["team_column_values"] }),
     onError: (e: any) => toast.error(e.message),
@@ -268,8 +296,10 @@ export default function TeamTasks() {
 
   const updateField = useMutation({
     mutationFn: async ({ id, field, value }: { id: string; field: string; value: any }) => {
+      const row = tasks.find((t: any) => t.id === id);
       const { error } = await supabase.from("team_tasks").update({ [field]: value } as any).eq("id", id);
       if (error) throw error;
+      log("update", `Editou "${TASK_FIELD_LABELS[field] || field}" para "${formatLogValue(value)}" em "${row?.title || id}"`, id);
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["team_tasks", campus] }),
     onError: (e: any) => toast.error(e.message),
@@ -284,6 +314,9 @@ export default function TeamTasks() {
         );
         if (error) throw error;
       }
+      const row = tasks.find((t: any) => t.id === taskId);
+      const names = assignees.map((uid) => profiles.find((p: any) => p.id === uid)?.full_name || profiles.find((p: any) => p.id === uid)?.email || uid);
+      log("update", `Atribuiu responsáveis em "${row?.title || taskId}": ${names.length ? names.join(", ") : "(nenhum)"}`, taskId);
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["team_task_assignees"] }),
     onError: (e: any) => toast.error(e.message),
@@ -299,6 +332,7 @@ export default function TeamTasks() {
         campus,
       }).select().single();
       if (error) throw error;
+      log("create", `Criou uma nova tarefa`, (data as any)?.id);
       return (data as any)?.id as string | undefined;
     },
     onSuccess: (id) => {
@@ -310,8 +344,10 @@ export default function TeamTasks() {
 
   const deleteRow = useMutation({
     mutationFn: async (id: string) => {
+      const row = tasks.find((t: any) => t.id === id);
       const { error } = await supabase.from("team_tasks").delete().eq("id", id);
       if (error) throw error;
+      log("delete", `Excluiu a tarefa "${row?.title || id}"`, id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["team_tasks", campus] });
@@ -339,7 +375,7 @@ export default function TeamTasks() {
           <Input placeholder="Buscar tarefas..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
         </div>
         <div className="flex gap-2">
-          {canEdit && <TeamColumnsManager table="tasks" />}
+          {canEdit && <TeamColumnsManager table="tasks" builtInFields={TASK_BUILTIN_FIELDS} />}
           <Button onClick={() => addRow.mutate()} className="gap-2" size="sm">
             <Plus className="h-4 w-4" /> Nova Linha
           </Button>
@@ -351,12 +387,12 @@ export default function TeamTasks() {
           <TableHeader>
             <TableRow className="bg-muted/50">
               <TableHead className="w-10" />
-              <TableHead className="min-w-[250px]"><BuiltInColumnHeader field="title" defaultLabel="Tarefa" type="Texto" table="tasks" /></TableHead>
-              <TableHead className="min-w-[120px]"><BuiltInColumnHeader field="description" defaultLabel="Descrição" type="Texto" table="tasks" /></TableHead>
-              <TableHead className="min-w-[100px]"><BuiltInColumnHeader field="priority" defaultLabel="Prioridade" type="Seleção" table="tasks" /></TableHead>
-              <TableHead className="min-w-[140px]"><BuiltInColumnHeader field="assignees" defaultLabel="Responsáveis" type="Pessoas" table="tasks" /></TableHead>
-              <TableHead className="min-w-[120px]"><BuiltInColumnHeader field="due_date" defaultLabel="Prazo" type="Data" table="tasks" /></TableHead>
-              <TableHead className="min-w-[120px]"><BuiltInColumnHeader field="status" defaultLabel="Status" type="Seleção" table="tasks" /></TableHead>
+              {isVisible("title") && <TableHead className="min-w-[250px]"><BuiltInColumnHeader field="title" defaultLabel="Tarefa" type="Texto" table="tasks" /></TableHead>}
+              {isVisible("description") && <TableHead className="min-w-[120px]"><BuiltInColumnHeader field="description" defaultLabel="Descrição" type="Texto" table="tasks" /></TableHead>}
+              {isVisible("priority") && <TableHead className="min-w-[100px]"><BuiltInColumnHeader field="priority" defaultLabel="Prioridade" type="Seleção" table="tasks" /></TableHead>}
+              {isVisible("assignees") && <TableHead className="min-w-[140px]"><BuiltInColumnHeader field="assignees" defaultLabel="Responsáveis" type="Pessoas" table="tasks" /></TableHead>}
+              {isVisible("due_date") && <TableHead className="min-w-[120px]"><BuiltInColumnHeader field="due_date" defaultLabel="Prazo" type="Data" table="tasks" /></TableHead>}
+              {isVisible("status") && <TableHead className="min-w-[120px]"><BuiltInColumnHeader field="status" defaultLabel="Status" type="Seleção" table="tasks" /></TableHead>}
               {customCols.map((c) => (
                 <TableHead key={c.id} className="min-w-[140px]">
                   <ColumnHeader column={c} table="tasks" />
@@ -372,11 +408,11 @@ export default function TeamTasks() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Carregando...</TableCell>
+                <TableCell colSpan={totalCols} className="text-center py-8 text-muted-foreground">Carregando...</TableCell>
               </TableRow>
             ) : filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Nenhuma tarefa encontrada</TableCell>
+                <TableCell colSpan={totalCols} className="text-center py-8 text-muted-foreground">Nenhuma tarefa encontrada</TableCell>
               </TableRow>
             ) : (
               filtered.map((t) => (
@@ -387,49 +423,61 @@ export default function TeamTasks() {
                       onCheckedChange={() => toggleDone(t.id, t.status)}
                     />
                   </TableCell>
-                  <TableCell className="p-1">
-                    <EditableCell
-                      value={t.title}
-                      autoFocus={t.id === newRowId}
-                      onSave={(v) => { updateField.mutate({ id: t.id, field: "title", value: v }); setNewRowId(null); }}
-                      className={`font-medium ${t.status === "done" ? "line-through" : ""}`}
-                    />
-                  </TableCell>
-                  <TableCell className="p-1">
-                    <EditableCell
-                      value={t.description || ""}
-                      onSave={(v) => updateField.mutate({ id: t.id, field: "description", value: v })}
-                    />
-                  </TableCell>
-                  <TableCell className="p-1">
-                    <PrioritySelect
-                      value={t.priority || ""}
-                      onSelect={(v) => updateField.mutate({ id: t.id, field: "priority", value: v || null })}
-                      priorities={PRIORITIES}
-                      colorMap={priorityColor}
-                    />
-                  </TableCell>
-                  <TableCell className="p-1">
-                    <UserMultiSelect
-                      values={assigneesMap[t.id] || []}
-                      profiles={profiles}
-                      onSave={(v) => updateAssignees.mutate({ taskId: t.id, assignees: v })}
-                    />
-                  </TableCell>
-                  <TableCell className="p-1">
-                    <InlineDateInput
-                      value={t.due_date || ""}
-                      onSave={(v) => updateField.mutate({ id: t.id, field: "due_date", value: v || null })}
-                    />
-                  </TableCell>
-                  <TableCell className="p-1">
-                    <InlineSelect
-                      value={t.status}
-                      options={TASK_STATUSES}
-                      onSelect={(v) => updateField.mutate({ id: t.id, field: "status", value: v })}
-                      colorMap={taskStatusColor}
-                    />
-                  </TableCell>
+                  {isVisible("title") && (
+                    <TableCell className="p-1">
+                      <EditableCell
+                        value={t.title}
+                        autoFocus={t.id === newRowId}
+                        onSave={(v) => { updateField.mutate({ id: t.id, field: "title", value: v }); setNewRowId(null); }}
+                        className={`font-medium ${t.status === "done" ? "line-through" : ""}`}
+                      />
+                    </TableCell>
+                  )}
+                  {isVisible("description") && (
+                    <TableCell className="p-1">
+                      <EditableCell
+                        value={t.description || ""}
+                        onSave={(v) => updateField.mutate({ id: t.id, field: "description", value: v })}
+                      />
+                    </TableCell>
+                  )}
+                  {isVisible("priority") && (
+                    <TableCell className="p-1">
+                      <PrioritySelect
+                        value={t.priority || ""}
+                        onSelect={(v) => updateField.mutate({ id: t.id, field: "priority", value: v || null })}
+                        priorities={PRIORITIES}
+                        colorMap={priorityColor}
+                      />
+                    </TableCell>
+                  )}
+                  {isVisible("assignees") && (
+                    <TableCell className="p-1">
+                      <UserMultiSelect
+                        values={assigneesMap[t.id] || []}
+                        profiles={profiles}
+                        onSave={(v) => updateAssignees.mutate({ taskId: t.id, assignees: v })}
+                      />
+                    </TableCell>
+                  )}
+                  {isVisible("due_date") && (
+                    <TableCell className="p-1">
+                      <InlineDateInput
+                        value={t.due_date || ""}
+                        onSave={(v) => updateField.mutate({ id: t.id, field: "due_date", value: v || null })}
+                      />
+                    </TableCell>
+                  )}
+                  {isVisible("status") && (
+                    <TableCell className="p-1">
+                      <InlineSelect
+                        value={t.status}
+                        options={TASK_STATUSES}
+                        onSelect={(v) => updateField.mutate({ id: t.id, field: "status", value: v })}
+                        colorMap={taskStatusColor}
+                      />
+                    </TableCell>
+                  )}
                   {customCols.map((c) => (
                     <TableCell key={c.id} className="p-1">
                       <CustomColumnCell

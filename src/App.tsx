@@ -11,6 +11,7 @@ import TeamRequests from "@/pages/TeamRequests";
 import TeamTasks from "@/pages/TeamTasks";
 import TeamPageView from "@/pages/TeamPageView";
 import UserManagement from "@/pages/UserManagement";
+import AuditLog from "@/pages/AuditLog";
 import Home from "@/pages/Home";
 
 const queryClient = new QueryClient({
@@ -43,6 +44,7 @@ export default function App() {
                 <Route path="/team/tasks" element={<PrivateRoute><TeamTasks /></PrivateRoute>} />
                 <Route path="/team/pages/:id" element={<PrivateRoute><TeamPageView /></PrivateRoute>} />
                 <Route path="/users" element={<PrivateRoute><UserManagement /></PrivateRoute>} />
+                <Route path="/log" element={<PrivateRoute><AuditLog /></PrivateRoute>} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </BrowserRouter>

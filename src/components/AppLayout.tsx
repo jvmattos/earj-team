@@ -8,7 +8,7 @@ import {
   ClipboardList, CheckSquare, Users, LogOut, Menu, X, Sun, Moon,
   FileText, Calendar, Link2, BookOpen, MessageSquare, Clipboard,
   Star, Globe, Folder, Smile, Bell, ListChecks, Megaphone, Phone,
-  LayoutGrid, Home, Plus, Settings, MapPin, Key, Pencil, Trash2,
+  LayoutGrid, Home, Plus, Settings, MapPin, Key, Pencil, Trash2, History,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
@@ -228,6 +228,13 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             className={navLinkClass(isActive("/users"))}
           >
             <Users className="h-4 w-4 shrink-0" /> Usuários
+          </Link>
+          <Link
+            to="/log"
+            onClick={() => closeMobile && setSidebarOpen(false)}
+            className={navLinkClass(isActive("/log"))}
+          >
+            <History className="h-4 w-4 shrink-0" /> Log de alterações
           </Link>
         </>
       )}
