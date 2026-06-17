@@ -31,11 +31,29 @@ export default function UserManagement() {
 
   const createUser = useMutation({
     mutationFn: async () => {
-      const { data, error } = await supabase.functions.invoke("create-user", {
-        body: { email: form.email, password: form.password, full_name: form.full_name, role: form.role, campus: form.campus },
+      // Use a secondary client with persistSession:false so the admin session is untouched
+      const { createClient } = await import("@supabase/supabase-js");
+      const tempClient = createClient(
+        import.meta.env.VITE_SUPABASE_URL,
+        import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        { auth: { persistSession: false, autoRefreshToken: false } }
+      );
+
+      const { data: signUpData, error: signUpError } = await tempClient.auth.signUp({
+        email: form.email,
+        password: form.password,
+        options: { data: { full_name: form.full_name } },
       });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
+      if (signUpError) throw signUpError;
+      if (!signUpData.user) throw new Error("Usuário não criado");
+
+      // Profile row is created by Supabase trigger; update role/campus via admin session
+      await new Promise((r) => setTimeout(r, 800));
+      const { error: updateError } = await supabase
+        .from("profiles")
+        .update({ role: form.role, campus: form.campus, full_name: form.full_name || null } as any)
+        .eq("id", signUpData.user.id);
+      if (updateError) throw updateError;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["profiles"] });
