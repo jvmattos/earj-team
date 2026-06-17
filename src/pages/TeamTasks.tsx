@@ -204,6 +204,7 @@ function InlineDateInput({ value, onSave }: { value: string; onSave: (v: string)
 
 export default function TeamTasks() {
   const { user, profile, isAdmin } = useAuth();
+  const canEdit = isAdmin || profile?.role === "operator";
   const { campus } = useCampus();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
@@ -365,7 +366,7 @@ export default function TeamTasks() {
                 <QuickAddColumn table="tasks" existingCols={customCols} />
               </TableHead>
               <TableHead className="min-w-[120px]">Criado por</TableHead>
-              {isAdmin && <TableHead className="w-10" />}
+              {canEdit && <TableHead className="w-10" />}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -440,7 +441,7 @@ export default function TeamTasks() {
                   ))}
                   <TableCell className="p-0 w-8" />
                   <TableCell className="p-1 text-sm px-2">{t.created_by_name}</TableCell>
-                  {isAdmin && (
+                  {canEdit && (
                     <TableCell className="p-1">
                       <Button
                         variant="ghost"

@@ -242,6 +242,7 @@ function InlineMultiSelect({
 
 export default function TeamRequests() {
   const { user, profile, isAdmin } = useAuth();
+  const canEdit = isAdmin || profile?.role === "operator";
   const { campus } = useCampus();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
@@ -362,7 +363,7 @@ export default function TeamRequests() {
               <TableHead className="w-8 p-0">
                 <QuickAddColumn table="requests" existingCols={customCols} />
               </TableHead>
-              {isAdmin && <TableHead className="w-10" />}
+              {canEdit && <TableHead className="w-10" />}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -430,7 +431,7 @@ export default function TeamRequests() {
                       />
                     </TableCell>
                   ))}
-                  {isAdmin && (
+                  {canEdit && (
                     <TableCell className="p-1">
                       <Button
                         variant="ghost"
