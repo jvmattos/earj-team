@@ -337,7 +337,7 @@ export default function TeamRequests() {
           <Input placeholder="Buscar pedidos..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
         </div>
         <div className="flex gap-2">
-          {isAdmin && <TeamColumnsManager table="requests" />}
+          {canEdit && <TeamColumnsManager table="requests" />}
           <Button onClick={() => addRow.mutate()} className="gap-2" size="sm">
             <Plus className="h-4 w-4" /> Nova Linha
           </Button>

@@ -339,7 +339,7 @@ export default function TeamTasks() {
           <Input placeholder="Buscar tarefas..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
         </div>
         <div className="flex gap-2">
-          {isAdmin && <TeamColumnsManager table="tasks" />}
+          {canEdit && <TeamColumnsManager table="tasks" />}
           <Button onClick={() => addRow.mutate()} className="gap-2" size="sm">
             <Plus className="h-4 w-4" /> Nova Linha
           </Button>
