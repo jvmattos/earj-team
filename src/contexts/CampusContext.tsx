@@ -13,14 +13,21 @@ interface CampusContextType {
 
 const CampusContext = createContext<CampusContextType | undefined>(undefined);
 
+function getInitialCampus(): Campus {
+  const fromUrl = new URLSearchParams(window.location.search).get("campus");
+  if (fromUrl === "barra" || fromUrl === "gavea") {
+    localStorage.setItem(STORAGE_KEY, fromUrl);
+    return fromUrl;
+  }
+  const stored = localStorage.getItem(STORAGE_KEY);
+  return stored === "gavea" ? "gavea" : "barra";
+}
+
 export function CampusProvider({ children }: { children: ReactNode }) {
   const { profile } = useAuth();
   const canSwitchCampus = profile?.campus === "all";
 
-  const [activeCampus, setActiveCampus] = useState<Campus>(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    return stored === "gavea" ? "gavea" : "barra";
-  });
+  const [activeCampus, setActiveCampus] = useState<Campus>(getInitialCampus);
 
   const setCampus = (campus: Campus) => {
     setActiveCampus(campus);
