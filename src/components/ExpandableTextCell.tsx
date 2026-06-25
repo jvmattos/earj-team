@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { ExternalLink } from "lucide-react";
 
 const URL_REGEX = /^(https?:\/\/|www\.)\S+$/i;
 const isLikelyUrl = (text: string) => URL_REGEX.test(text.trim());
@@ -26,10 +25,12 @@ export function ExpandableTextCell({
 }) {
   const [open, setOpen] = useState(false);
   const [val, setVal] = useState(value);
+  const [editing, setEditing] = useState(false);
 
-  const openDialog = () => { setVal(value); setOpen(true); };
+  const openDialog = () => { setVal(value); setEditing(false); setOpen(true); };
   const save = () => { if (val !== value) onSave(val); setOpen(false); };
   const cancel = () => setOpen(false);
+  const showAsLink = val.trim() && isLikelyUrl(val) && !editing;
 
   return (
     <>
@@ -43,25 +44,31 @@ export function ExpandableTextCell({
       <Dialog open={open} onOpenChange={(o) => !o && cancel()}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
-          {val.trim() && isLikelyUrl(val) && (
+          {showAsLink ? (
             <a
               href={normalizeUrl(val)}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline -mt-2"
+              className="block text-sm text-primary hover:underline break-all min-h-[160px] p-2 border rounded-md"
             >
-              <ExternalLink className="h-3.5 w-3.5" /> Abrir link
+              {val}
             </a>
+          ) : (
+            <Textarea
+              autoFocus
+              value={val}
+              onChange={(e) => setVal(e.target.value)}
+              className="min-h-[160px] text-sm"
+            />
           )}
-          <Textarea
-            autoFocus
-            value={val}
-            onChange={(e) => setVal(e.target.value)}
-            className="min-h-[160px] text-sm"
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={cancel}>Cancelar</Button>
-            <Button onClick={save}>Salvar</Button>
+          <DialogFooter className="sm:justify-between">
+            {showAsLink ? (
+              <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>Editar</Button>
+            ) : <span />}
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={cancel}>Cancelar</Button>
+              <Button onClick={save}>Salvar</Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
