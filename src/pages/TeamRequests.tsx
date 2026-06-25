@@ -18,6 +18,7 @@ import { Plus, Trash2, Search, X, GripVertical } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import TeamColumnsManager, { CustomColumnCell, useCustomColumns, useColumnValues, useColumnPrefs, ColumnHeader, QuickAddColumn, BuiltInColumnHeader } from "@/components/TeamColumnsManager";
+import { ExpandableTextCell } from "@/components/ExpandableTextCell";
 import { logAudit, formatLogValue } from "@/lib/auditLog";
 
 const REQUEST_FIELD_LABELS: Record<string, string> = {
@@ -434,9 +435,10 @@ export default function TeamRequests() {
                   )}
                   {isVisible("description") && (
                     <TableCell className="p-1">
-                      <EditableCell
+                      <ExpandableTextCell
                         value={r.description || ""}
                         onSave={(v) => updateField.mutate({ id: r.id, field: "description", value: v })}
+                        title="Descrição"
                       />
                     </TableCell>
                   )}

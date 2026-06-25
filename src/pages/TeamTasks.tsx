@@ -16,6 +16,7 @@ import {
 import { toast } from "sonner";
 import { Plus, Trash2, Search, X } from "lucide-react";
 import TeamColumnsManager, { CustomColumnCell, useCustomColumns, useColumnValues, useColumnPrefs, ColumnHeader, QuickAddColumn, BuiltInColumnHeader } from "@/components/TeamColumnsManager";
+import { ExpandableTextCell } from "@/components/ExpandableTextCell";
 import { logAudit, formatLogValue } from "@/lib/auditLog";
 
 const TASK_FIELD_LABELS: Record<string, string> = {
@@ -435,9 +436,10 @@ export default function TeamTasks() {
                   )}
                   {isVisible("description") && (
                     <TableCell className="p-1">
-                      <EditableCell
+                      <ExpandableTextCell
                         value={t.description || ""}
                         onSave={(v) => updateField.mutate({ id: t.id, field: "description", value: v })}
+                        title="Descrição"
                       />
                     </TableCell>
                   )}

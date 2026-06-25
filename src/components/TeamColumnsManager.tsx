@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
 import { Plus, Trash2, Settings2, X, ChevronDown, Eye } from "lucide-react";
+import { ExpandableTextCell } from "@/components/ExpandableTextCell";
 
 const TABLE_LOG_NAME: Record<string, string> = { tasks: "team_tasks", requests: "team_requests" };
 
@@ -485,8 +486,12 @@ export function CustomColumnCell({ column, value, onSave }: {
 }) {
   if (column.type === "text") {
     return (
-      <input defaultValue={value || ""} onBlur={(e) => e.target.value !== (value || "") && onSave(e.target.value)}
-        className="w-full h-7 text-xs bg-transparent hover:bg-accent/50 rounded px-1 outline-none focus:bg-accent/50" />
+      <ExpandableTextCell
+        value={value || ""}
+        onSave={onSave}
+        title={column.name}
+        className="text-xs"
+      />
     );
   }
   if (column.type === "number") {
