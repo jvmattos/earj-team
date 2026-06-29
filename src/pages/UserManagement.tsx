@@ -9,7 +9,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Pencil, Trash2, Plus, KeyRound } from "lucide-react";
+import { Pencil, Trash2, Plus, KeyRound, Lock, Ban, RotateCcw } from "lucide-react";
+
+async function callAdminUsers(body: { action: string; user_id: string; password?: string }) {
+  const { data, error } = await supabase.functions.invoke("admin-users", { body });
+  if (error) throw error;
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
 
 export default function UserManagement() {
   const { isAdmin, user: currentUser } = useAuth();
@@ -19,6 +26,9 @@ export default function UserManagement() {
   const [editOpen, setEditOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<any>(null);
   const [editForm, setEditForm] = useState({ full_name: "" });
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  const [passwordTarget, setPasswordTarget] = useState<any>(null);
+  const [newPasswordValue, setNewPasswordValue] = useState("");
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ["profiles"],
@@ -103,14 +113,30 @@ export default function UserManagement() {
     onError: (e: any) => toast.error(e.message),
   });
 
-  const deleteProfile = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from("profiles").delete().eq("id", id);
-      if (error) throw error;
-    },
+  const deleteUser = useMutation({
+    mutationFn: async (id: string) => callAdminUsers({ action: "delete", user_id: id }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["profiles"] });
-      toast.success("Usuário removido do sistema!");
+      toast.success("Usuário excluído permanentemente!");
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const toggleDisabled = useMutation({
+    mutationFn: async (u: any) => callAdminUsers({ action: u.disabled ? "unban" : "ban", user_id: u.id }),
+    onSuccess: (_data, u) => {
+      qc.invalidateQueries({ queryKey: ["profiles"] });
+      toast.success(u.disabled ? "Usuário reativado!" : "Usuário desativado!");
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const setUserPassword = useMutation({
+    mutationFn: async () => callAdminUsers({ action: "set_password", user_id: passwordTarget.id, password: newPasswordValue }),
+    onSuccess: () => {
+      toast.success("Senha definida!");
+      setPasswordOpen(false);
+      setNewPasswordValue("");
     },
     onError: (e: any) => toast.error(e.message),
   });
@@ -130,6 +156,12 @@ export default function UserManagement() {
     setEditingUser(u);
     setEditForm({ full_name: u.full_name || "" });
     setEditOpen(true);
+  };
+
+  const openSetPassword = (u: any) => {
+    setPasswordTarget(u);
+    setNewPasswordValue("");
+    setPasswordOpen(true);
   };
 
   if (!isAdmin) return (
@@ -158,7 +190,7 @@ export default function UserManagement() {
               <TableHead>Email</TableHead>
               <TableHead>Função</TableHead>
               <TableHead>Campus</TableHead>
-              <TableHead className="w-28">Ações</TableHead>
+              <TableHead className="w-44">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -174,6 +206,9 @@ export default function UserManagement() {
                       {(u.full_name || u.email || "U")[0].toUpperCase()}
                     </div>
                     {u.full_name || "—"}
+                    {u.disabled && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-destructive/10 text-destructive font-medium">Desativado</span>
+                    )}
                   </div>
                 </TableCell>
                 <TableCell className="text-muted-foreground text-sm">{u.email}</TableCell>
@@ -214,17 +249,32 @@ export default function UserManagement() {
                     </Button>
                     <Button
                       variant="ghost" size="icon" className="h-7 w-7"
-                      title="Enviar link de redefinição de senha"
+                      title="Definir senha (sem enviar email)"
+                      onClick={() => openSetPassword(u)}
+                    >
+                      <Lock className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost" size="icon" className="h-7 w-7"
+                      title="Enviar link de redefinição de senha por email"
                       disabled={sendPasswordReset.isPending}
                       onClick={() => { if (confirm(`Enviar email de redefinição de senha para "${u.email}"?`)) sendPasswordReset.mutate(u.email); }}
                     >
                       <KeyRound className="h-3.5 w-3.5" />
                     </Button>
                     <Button
+                      variant="ghost" size="icon" className="h-7 w-7"
+                      disabled={u.id === currentUser?.id || toggleDisabled.isPending}
+                      title={u.id === currentUser?.id ? "Você não pode desativar seu próprio usuário" : u.disabled ? "Reativar usuário" : "Desativar usuário"}
+                      onClick={() => { if (confirm(`${u.disabled ? "Reativar" : "Desativar"} o acesso de "${u.full_name || u.email}"?`)) toggleDisabled.mutate(u); }}
+                    >
+                      {u.disabled ? <RotateCcw className="h-3.5 w-3.5" /> : <Ban className="h-3.5 w-3.5" />}
+                    </Button>
+                    <Button
                       variant="ghost" size="icon" className="h-7 w-7 text-destructive"
                       disabled={u.id === currentUser?.id}
-                      title={u.id === currentUser?.id ? "Você não pode remover seu próprio usuário" : "Remover usuário"}
-                      onClick={() => { if (confirm(`Remover "${u.full_name || u.email}" do sistema? Isso revoga o acesso, mas não exclui a conta de login (faça isso em Authentication → Users no Supabase, se necessário).`)) deleteProfile.mutate(u.id); }}
+                      title={u.id === currentUser?.id ? "Você não pode excluir seu próprio usuário" : "Excluir usuário permanentemente"}
+                      onClick={() => { if (confirm(`Excluir "${u.full_name || u.email}" permanentemente? Isso remove a conta de login e o perfil — não pode ser desfeito.`)) deleteUser.mutate(u.id); }}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
@@ -302,6 +352,36 @@ export default function UserManagement() {
             <Button variant="outline" onClick={() => setEditOpen(false)}>Cancelar</Button>
             <Button onClick={() => updateProfile.mutate()} disabled={updateProfile.isPending} className="gap-1.5">
               <Pencil className="h-3.5 w-3.5" /> Salvar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={passwordOpen} onOpenChange={(o) => !o && setPasswordOpen(false)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader><DialogTitle>Definir senha</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-muted-foreground">
+              Defina uma nova senha para <strong>{passwordTarget?.full_name || passwordTarget?.email}</strong>. Nenhum email é enviado — combine a senha diretamente com a pessoa.
+            </p>
+            <div>
+              <Label className="text-xs">Nova senha</Label>
+              <Input
+                type="password"
+                value={newPasswordValue}
+                onChange={(e) => setNewPasswordValue(e.target.value)}
+                className="mt-1 h-9 text-sm"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPasswordOpen(false)}>Cancelar</Button>
+            <Button
+              onClick={() => setUserPassword.mutate()}
+              disabled={newPasswordValue.length < 6 || setUserPassword.isPending}
+              className="gap-1.5"
+            >
+              <Lock className="h-3.5 w-3.5" /> {setUserPassword.isPending ? "Salvando..." : "Salvar"}
             </Button>
           </DialogFooter>
         </DialogContent>
